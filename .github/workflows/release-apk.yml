@@ -1,0 +1,122 @@
+# Builds the OneOS APKs (full and probe editions) and uploads them to a GitHub
+# release named after the app's versionName (app-android/app/build.gradle.kts).
+#
+# Runs on every push to main, on v* tags, and by hand (Actions > Release APK >
+# Run workflow). A release that already exists for the version gets its APKs
+# replaced.
+#
+# Signing (app-android/README.md, "Build"): with these repository secrets the
+# APKs are release builds signed with the OneOS release key:
+#   ONEOS_KEYSTORE_BASE64   base64 of oneos-release.jks (base64 -w0 oneos-release.jks)
+#   ONEOS_KEYSTORE_PASSWORD store password
+#   ONEOS_KEY_ALIAS         key alias
+#   ONEOS_KEY_PASSWORD      key password
+# Without them the workflow builds debug APKs instead and marks the release as
+# a pre-release: a debug-signed build cannot update a release-signed install.
+name: Release APK
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+concurrency:
+  group: release-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app-android
+    env:
+      GH_PACKAGES_USER: ${{ github.actor }}
+      GH_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Read the version
+        id: version
+        run: |
+          name=$(sed -n 's/^ *versionName = "\([0-9.]*\)"$/\1/p' app/build.gradle.kts | head -n 1)
+          code=$(sed -n 's/^ *versionCode = \([0-9]*\)$/\1/p' app/build.gradle.kts | head -n 1)
+          [ -n "$name" ] && [ -n "$code" ] || { echo "no versionName/versionCode in app/build.gradle.kts"; exit 1; }
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "OneOS $name ($code)"
+
+      - name: Set up the release key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ONEOS_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ONEOS_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ONEOS_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ONEOS_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No ONEOS_KEYSTORE_BASE64 secret: building debug APKs."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          dir="$HOME/.oneos-release"
+          mkdir -p "$dir" && chmod 700 "$dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$dir/oneos-release.jks"
+          {
+            echo "storeFile=$dir/oneos-release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > "$dir/keystore.properties"
+          chmod 600 "$dir/oneos-release.jks" "$dir/keystore.properties"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          if [ "${{ steps.key.outputs.signed }}" = true ]; then
+            ./gradlew --no-daemon assembleFullRelease assembleProbeRelease
+          else
+            ./gradlew --no-daemon assembleFullDebug assembleProbeDebug
+          fi
+
+      - name: Collect the APKs
+        run: |
+          v=${{ steps.version.outputs.name }}
+          t=$([ "${{ steps.key.outputs.signed }}" = true ] && echo release || echo debug)
+          mkdir -p ../out
+          cp "app/build/outputs/apk/full/$t/app-full-$t.apk" "../out/OneOS-$v.apk"
+          cp "app/build/outputs/apk/probe/$t/app-probe-$t.apk" "../out/OneOS-Probe-$v.apk"
+          python3 ../scripts/check-staging-apk.py "../out/OneOS-$v.apk"
+          (cd ../out && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OneOS-${{ steps.version.outputs.name }}
+          path: out/*
+
+      - name: Upload to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v{0}', steps.version.outputs.name) }}
+          target_commitish: ${{ github.sha }}
+          name: OneOS ${{ steps.version.outputs.name }}
+          prerelease: ${{ steps.key.outputs.signed != 'true' }}
+          generate_release_notes: true
+          overwrite_files: true
+          files: out/*

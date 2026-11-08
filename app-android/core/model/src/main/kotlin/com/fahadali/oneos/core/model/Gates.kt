@@ -180,8 +180,10 @@ data class GateInput(
  * [ID_INSTALLD], [ID_OLD_SWITCHER], [ID_STAGE], [ID_SPACE], [ID_SCREEN_LOCK],
  * [ID_BATTERY] (Switch only), [ID_CARRIER], the CPU finding's own id
  * ([CpuRules]), the profile's notes, and [ID_LOGS] (Switch only, when set).
- * Must-tick at Switch: an untested (profile, image) pair and a VoLTE-only (or
- * unknown) carrier.
+ * Must-tick at Switch: an untested (profile, image) pair, a VoLTE-only (or
+ * unknown) carrier, a phone on another Android than the image (Android 15 or
+ * newer, [AndroidRelease.MIN_HOST_SDK]) and an installd table that differs
+ * from the one the OneOS files carry.
  *
  * A profile may take more than one image ([PhoneProfile.choices]); the gates
  * are for one of them ([chosen]): PREPARE the picked .gz or the image already
@@ -216,6 +218,7 @@ object SwitchGates {
     const val R_PROFILE_DISABLED = "disabled"
     const val R_PROFILE_UNTESTED = "untested"
     const val R_ANDROID_DIFFERS = "differs"
+    const val R_ANDROID_OLDER = "older"
     const val R_FORM_MISMATCH = "mismatch"
     const val R_IMAGE_NOT_IN_BUILD = "not-in-build"
     const val R_IMAGE_OTHER_SERIES = "other-series"
@@ -257,6 +260,25 @@ object SwitchGates {
             "I understand this phone hasn't run ${Images.systemName(image, p, images)} before"
         }
 
+    /** The tick text for a phone on another Android (15 or newer) than the image. */
+    fun otherAndroidAck(f: DeviceFacts, image: ImageRef?, images: List<ImageRef> = Images.ALL): String {
+        val have = f.androidRelease.ifEmpty { AndroidRelease.name(f.sdk) }
+        val want = (image?.let { listOf(it.sdk) } ?: images.map { it.sdk }).distinct().sorted().joinToString { AndroidRelease.name(it) }
+        return "I understand this phone runs Android $have and the system is Android $want, so it may not start or work"
+    }
+
+    /** The tick text for an installd table that differs from the one the OneOS files carry. */
+    const val INSTALLD_DIFFERS_ACK =
+        "I understand One UI's installd differs from the OneOS files, and the other system could change or delete One UI's app data"
+
+    /**
+     * True when this report lets a session start on a phone the root script would
+     * otherwise refuse: another Android than the image, or another installd table.
+     * Only then may the launch ask root to relax those two checks.
+     */
+    fun otherHost(report: GateReport): Boolean =
+        report.find(ID_ANDROID)?.level == Level.WARN || report.find(ID_INSTALLD)?.level == Level.WARN
+
     /**
      * The image the gates are for, and how the image gate sees it (PREPARE).
      * PREPARE: what [GateInput.onPhone] or [GateInput.imageFile] is, when
@@ -295,7 +317,7 @@ object SwitchGates {
 
         out += Gate(root(f))
         out += profileGate(f, resolution, profiles, switching, choice, image, images)
-        out += Gate(android(f, image, images))
+        out += android(f, image, images, switching)
         if (profile != null) {
             out += Gate(form(f, profile))
             out += Gate(
@@ -317,7 +339,7 @@ object SwitchGates {
                 },
             )
         }
-        out += Gate(installd(input))
+        out += installd(input, switching)
         out += Gate(oldSwitcher(input.oldSwitcherInstalled))
         out += Gate(stageIdle(input.stage))
         space(phase, input, image, set)?.let { out += Gate(it) }
@@ -444,17 +466,29 @@ object SwitchGates {
         )
     }
 
-    private fun android(f: DeviceFacts, image: ImageRef?, images: List<ImageRef>): Finding {
+    private fun android(f: DeviceFacts, image: ImageRef?, images: List<ImageRef>, switching: Boolean): Gate {
         val sdks = (image?.let { listOf(it.sdk) } ?: images.map { it.sdk }).distinct().sorted()
-        return if (f.sdk in sdks) {
-            Finding(ID_ANDROID, Level.OK, "Android ${AndroidRelease.name(f.sdk)}", "SDK ${f.sdk}, the same as the image.")
-        } else {
-            block(
-                ID_ANDROID, "Android version differs from the image",
-                "This phone runs Android ${f.androidRelease.ifEmpty { AndroidRelease.name(f.sdk) }} (SDK ${f.sdk}); " +
-                    "the image is Android ${sdks.joinToString { AndroidRelease.name(it) }} (SDK ${sdks.joinToString()}). " +
-                    "The other system shares One UI's system services, so both must be the same Android version.",
-                R_ANDROID_DIFFERS,
+        val have = f.androidRelease.ifEmpty { AndroidRelease.name(f.sdk) }
+        val want = "Android ${sdks.joinToString { AndroidRelease.name(it) }} (SDK ${sdks.joinToString()})"
+        return when {
+            f.sdk in sdks -> Gate(Finding(ID_ANDROID, Level.OK, "Android ${AndroidRelease.name(f.sdk)}", "SDK ${f.sdk}, the same as the image."))
+            f.sdk >= AndroidRelease.MIN_HOST_SDK -> Gate(
+                Finding(
+                    ID_ANDROID, Level.WARN, "Android $have on the phone, the system is ${want.substringBefore(" (")}",
+                    "This phone runs Android $have (SDK ${f.sdk}); the image is $want. The other system shares " +
+                        "One UI's system services, which differ between Android versions: it may not start, " +
+                        "or parts of it may not work. Untested.",
+                    R_ANDROID_DIFFERS,
+                ),
+                if (switching) otherAndroidAck(f, image, images) else null,
+            )
+            else -> Gate(
+                block(
+                    ID_ANDROID, "Android ${AndroidRelease.name(AndroidRelease.MIN_HOST_SDK)} or newer needed",
+                    "This phone runs Android $have (SDK ${f.sdk}); the image is $want. OneOS needs Android " +
+                        "${AndroidRelease.name(AndroidRelease.MIN_HOST_SDK)} (SDK ${AndroidRelease.MIN_HOST_SDK}) or newer on the phone.",
+                    R_ANDROID_OLDER,
+                ),
             )
         }
     }
@@ -501,21 +535,35 @@ object SwitchGates {
         }
     }
 
-    private fun installd(input: GateInput): Finding {
+    private fun installd(input: GateInput, switching: Boolean): Gate {
         val p = InstalldExpected.problems(input.installd, input.expectedInstalld)
-        return if (p.isEmpty()) {
-            Finding(
-                ID_INSTALLD, Level.OK, "installd interface matches the OneOS files",
-                "${input.installd?.methods?.size} methods, the same table the guard jars carry.",
-            )
-        } else {
-            block(
-                ID_INSTALLD, "installd interface differs from the OneOS files",
-                p.take(6).joinToString("; ") + ". The guard jars carry One UI's installd codes; a One UI " +
-                    "update can change them, and switching waits for a OneOS build made for it.",
-                R_INSTALLD_DIFFERS,
+        if (p.isEmpty()) {
+            return Gate(
+                Finding(
+                    ID_INSTALLD, Level.OK, "installd interface matches the OneOS files",
+                    "${input.installd?.methods?.size} methods, the same table the guard jars carry.",
+                ),
             )
         }
+        // Not derived, or the app's own table is not the pinned one: nothing to stage, fail closed.
+        if (!InstalldExpected.onlyDiffers(input.installd, input.expectedInstalld)) {
+            return Gate(
+                block(
+                    ID_INSTALLD, "installd interface not checked",
+                    p.take(6).joinToString("; ") + ".",
+                    R_INSTALLD_DIFFERS,
+                ),
+            )
+        }
+        return Gate(
+            Finding(
+                ID_INSTALLD, Level.WARN, "installd interface differs from the OneOS files",
+                p.take(6).joinToString("; ") + ". The guard jars carry One UI 9's installd codes; on this One UI " +
+                    "some of the other system's installd calls can reach a different One UI method. Untested.",
+                R_INSTALLD_DIFFERS,
+            ),
+            if (switching) INSTALLD_DIFFERS_ACK else null,
+        )
     }
 
     private fun oldSwitcher(installed: Boolean?): Finding = when (installed) {

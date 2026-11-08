@@ -987,6 +987,14 @@ object Profiles {
 
 /** Android release names for the SDK levels OneOS meets. */
 object AndroidRelease {
+    /**
+     * The oldest host Android a session may run on (Android 15). A phone on a
+     * different Android than the image switches only after a tick, the way
+     * OneLineage runs its GSI on One UI 7, 8 and 9 alike; older ones are refused.
+     * Kept equal to MIN_HOST_SDK in oneos_root.sh (StageAuditTest).
+     */
+    const val MIN_HOST_SDK = 35
+
     fun name(sdk: Int): String = when (sdk) {
         31 -> "12"
         32 -> "12L"

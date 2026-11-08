@@ -153,9 +153,23 @@ object Plain {
                 )
                 else -> m("This phone isn't supported yet", "OneOS works on ${phoneList(profiles)}.", FixAction.SEND_PHONE_DETAILS)
             }
-            SwitchGates.ID_ANDROID -> {
+            SwitchGates.ID_ANDROID -> if (f.level == Level.WARN) {
+                val want = image?.let { AndroidRelease.name(it.sdk) } ?: "17"
+                val have = facts.phoneAndroid
+                m(
+                    "Made for Android $want, not yours",
+                    if (have != null) "Your phone has Android $have. It may not start, or parts of it may not work." +
+                        " Untested." else "It may not start, or parts of it may not work. Untested.",
+                    FixAction.ACKNOWLEDGE,
+                )
+            } else {
                 val want = image?.let { AndroidRelease.name(it.sdk) }
                 val have = facts.phoneAndroid
+                if (r == SwitchGates.R_ANDROID_OLDER) return m(
+                    "OneOS needs Android ${AndroidRelease.name(AndroidRelease.MIN_HOST_SDK)} or newer",
+                    if (have != null) "Your phone has Android $have." else "Your phone's Android is too old.",
+                    FixAction.NONE,
+                )
                 m(
                     if (want != null) "$sys needs Android $want" else "Your Android version differs",
                     if (have != null) {
@@ -167,7 +181,11 @@ object Plain {
                 )
             }
             SwitchGates.ID_FORM -> m("Your phone doesn't match its profile", "OneOS can't be sure it's safe here.", FixAction.SEND_PHONE_DETAILS)
-            SwitchGates.ID_INSTALLD -> m(
+            SwitchGates.ID_INSTALLD -> if (f.level == Level.WARN) m(
+                "Your One UI isn't the tested one",
+                "$sys could change or delete One UI's app data. Back up first. Untested.",
+                FixAction.ACKNOWLEDGE,
+            ) else m(
                 "One UI was updated",
                 "This OneOS version doesn't know your new One UI yet. Wait for a OneOS update before switching.",
                 FixAction.SEND_PHONE_DETAILS,

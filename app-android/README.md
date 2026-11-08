@@ -528,7 +528,9 @@ OneOS release key (`CN=OneOS`, certificate SHA-256 `37560f7b…2295f83a`). The k
 lives outside the repo, because the build machine's projects folder is shared:
 `~/.oneos-release/{oneos-release.jks,keystore.properties}` (mode 600) in the
 account that builds releases. Without it `packageFullRelease` and
-`packageProbeRelease` stop instead of writing an unsigned APK. Every update must be signed with this same key: a
+`packageProbeRelease` sign with the debug key and print a warning (forks and
+CI without the key; `.github/workflows/release-apk.yml` makes and keeps a key of
+its own instead). Every update must be signed with this same key: a
 new key means every tester uninstalls first (and loses the app's root
 grant), and a debug-signed build could be replaced by anyone holding the
 shared debug key, keeping the root grant. Keep an offline copy of the key.

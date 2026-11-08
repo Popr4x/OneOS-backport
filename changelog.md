@@ -158,3 +158,9 @@ Camera in the Pixel systems (0.4.24): the flashlight tile and apps that use
 the Camera2 API work (Open Camera: Settings › Camera API › Camera2). Apps
 that use the older camera API still fail; Pixel Camera itself needs Google's
 camera hardware support and will not work on a Galaxy.
+
+New in 0.4.66: **Android 15 and 16 phones (One UI 7 and 8.x) can switch**, untested, the way OneLineage
+runs on them: a phone on another Android than the system (15 or newer) and a phone whose One UI installd
+differs from One UI 9's are warnings to tick instead of refusals. The installd tick says the other system
+could change or delete One UI's app data, since the OneOS files carry One UI 9's installd codes. Android 14
+and older are still refused.

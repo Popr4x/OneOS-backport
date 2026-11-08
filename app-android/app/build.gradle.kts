@@ -439,8 +439,8 @@ android {
         // Pixel 9 Pro XL r5, Infinity-X r4, Nothing OS r22 (samcam_bar.tar for phones). The panel kept at its top rate in
         // Pixel, HyperOS and Nothing OS (it stayed at 24 Hz: 10-15 fps). Infinity-X: Samsung IMS (the carve-out's
         // /system/system_ext path; framework members; SMS centre). The Galaxy A16 4G (SM-A165F).
-        versionCode = 91
-        versionName = "0.4.65"
+        versionCode = 92
+        versionName = "0.4.66"
         // 0.4.56 (73), TEST CHANNEL ONLY: the Find N6 set's Theme Store logs every OkHttp request and reply (n6g_r7,
         // patches/theme_store_netlog.py) for the owner's "No Data" log; the next public build goes back to n6g_r6.
         // Send to the OneOS team (0.4.29, both editions): the report service's
@@ -498,9 +498,10 @@ android {
 
     buildTypes {
         release {
-            // What friends get: not debuggable, signed with the OneOS release key.
+            // What friends get: not debuggable, signed with the OneOS release key. Without
+            // ~/.oneos-release (a fork, or CI without its key secrets) the debug key signs it.
             isMinifyEnabled = false
-            signingConfig = signingConfigs.findByName("release")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -524,11 +525,13 @@ kotlin {
     jvmToolchain(libs.versions.jvmToolchain.get().toInt())
 }
 
-// A release without the key would be an unsigned APK: refuse instead (both editions).
+// Without the release key the release is signed with the debug key (see release above): say so.
 tasks.matching { it.name == "packageFullRelease" || it.name == "packageProbeRelease" }.configureEach {
     val hasKey = releaseKeys != null
     doFirst {
-        check(hasKey) { "No release key: ~/.oneos-release/keystore.properties is missing (see app-android/README.md, section Build)." }
+        if (!hasKey) {
+            logger.warn("No release key (~/.oneos-release/keystore.properties): $name signs with the debug key.")
+        }
     }
 }
 

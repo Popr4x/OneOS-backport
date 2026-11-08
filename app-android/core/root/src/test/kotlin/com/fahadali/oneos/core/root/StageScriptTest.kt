@@ -2,6 +2,7 @@ package com.fahadali.oneos.core.root
 
 import com.fahadali.oneos.core.model.Hashes
 import com.fahadali.oneos.core.model.Images
+import com.fahadali.oneos.core.model.InstalldMethod
 import com.fahadali.oneos.core.model.InstalldTableFormat
 import com.fahadali.oneos.core.model.PackageSet
 import com.fahadali.oneos.core.model.PackageSets
@@ -72,10 +73,12 @@ class StageScriptTest {
 
         fun receiveRaw() = fr.run(RootScript.Verb.RECEIVE, "system.raw", raw.size.toString(), Hashes.sha256(raw), stdin = raw)
 
-        fun table(fingerprint: String = fr.props.getValue("ro.build.fingerprint")): FakeRoot.Run {
+        fun table(
+            fingerprint: String = fr.props.getValue("ro.build.fingerprint"),
+            methods: List<InstalldMethod> = InstalldTableFormat.parseLegacy(Shipped.installdFixture.readText()),
+        ): FakeRoot.Run {
             val t = InstalldTableFormat.write(
-                fingerprint, "/system/framework/framework.jar", Hashes.sha256(fr.frameworkJar),
-                InstalldTableFormat.parseLegacy(Shipped.installdFixture.readText()),
+                fingerprint, "/system/framework/framework.jar", Hashes.sha256(fr.frameworkJar), methods,
             ).toByteArray()
             return fr.run(RootScript.Verb.TABLE, t.size.toString(), stdin = t)
         }
@@ -90,7 +93,11 @@ class StageScriptTest {
         fun launch(
             mode: String = "session", hideGms: String = "0", code: String = this.code,
             heatCap: String = "1", secIms: String = "0", edmStub: String = "0", verboseBoot: String = "0",
-        ) = fr.run(RootScript.Verb.LAUNCH, mode, code, "0123456789abcdef", hideGms, heatCap, secIms, edmStub, verboseBoot)
+            otherHost: String? = null,
+        ) = fr.run(
+            RootScript.Verb.LAUNCH,
+            *listOfNotNull(mode, code, "0123456789abcdef", hideGms, heatCap, secIms, edmStub, verboseBoot, otherHost).toTypedArray(),
+        )
 
         fun prepare(mode: String = "new") {
             ok(begin(mode))
@@ -1518,6 +1525,35 @@ class StageScriptTest {
         org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { s.launch(verboseBoot = "2") }
         assertEquals(before, env.readText())
         assertTrue(RootScript.problems(RootScript.Verb.LAUNCH, listOf("session", "4", "0123456789abcdef", "0", "1", "0", "0", "1;reboot")).isNotEmpty())
+    }
+
+    @Test
+    fun otherAndroidAndInstalldAreAcceptedOnlyWhenTicked() = eachShell { fr ->
+        val s = Stager(fr)
+        // Another One UI's installd table (OneLineage-style hosts): staged, then refused at launch unless ticked.
+        val other = InstalldTableFormat.parseLegacy(Shipped.installdFixture.readText())
+            .map { if (it.code == 13) it.copy(code = 113) else it }
+        s.ok(s.begin())
+        for (n in s.files.keys) s.ok(s.receive(n))
+        s.ok(s.receiveRaw())
+        s.ok(s.table(methods = other))
+        s.ok(s.env())
+        s.ok(s.finish())
+        refused(s.launch(), "installd table differs")
+        refused(s.launch(otherHost = "0"), "installd table differs")
+        refused(s.launch(otherHost = "1"), "test root: every launch check passed")
+        // Android 16 and 15 on the phone: only with the tick; Android 14 never.
+        for (sdk in listOf("36", "35")) {
+            fr.props["ro.build.version.sdk"] = sdk
+            fr.writeProps()
+            refused(s.launch(), "Android SDK $sdk, the image is 37")
+            refused(s.launch(otherHost = "1"), "test root: every launch check passed")
+        }
+        fr.props["ro.build.version.sdk"] = "34"
+        fr.writeProps()
+        refused(s.launch(otherHost = "1"), "needs 35 or newer")
+        org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { s.launch(otherHost = "2") }
+        assertTrue(RootScript.problems(RootScript.Verb.LAUNCH, listOf("session", "4", "0123456789abcdef", "0", "1", "0", "0", "0", "1", "1")).isNotEmpty())
     }
 
     @Test

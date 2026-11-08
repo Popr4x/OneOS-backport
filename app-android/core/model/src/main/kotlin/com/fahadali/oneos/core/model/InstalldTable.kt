@@ -184,6 +184,18 @@ object InstalldExpected {
         }
         return p.distinct()
     }
+
+    /**
+     * True when [derived] is a good table that only differs from the expected one
+     * (another One UI), not one that could not be derived or an app asset that is
+     * not the pinned table. Such a table can be staged; switching asks for a tick.
+     */
+    fun onlyDiffers(derived: InstalldDerivation?, expectedText: String? = null): Boolean {
+        if (derived == null || !derived.ok || derived.methods.isEmpty()) return false
+        val expected = expectedText?.let(::nonCommentLines)
+        if (expected != null && Hashes.sha256(expected) != SHA256) return false
+        return problems(derived, expectedText).isNotEmpty()
+    }
 }
 
 /**

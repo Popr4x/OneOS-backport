@@ -227,6 +227,8 @@ object LaunchJob : BackgroundJob<LaunchJob.State>(State(), "oneos-launch") {
                 if (dryRun) "dry" else "session", BuildConfig.VERSION_CODE.toString(), sid, if (hideGms) "1" else "0",
                 if (SessionPrefs.heatCap(app)) "1" else "0", if (secIms) "1" else "0", if (edmStub) "1" else "0",
                 if (SessionPrefs.verboseBoot(app)) "1" else "0",
+                // Another Android (15+) or installd table than the OneOS files: ticked above, so root may accept it.
+                if (SwitchGates.otherHost(report)) "1" else "0",
             ),
             silenceMs = 5 * 60_000L,
         )

@@ -28,7 +28,8 @@ class PlainTest {
         )
         add(SwitchGates.ID_PROFILE, Level.BLOCK, SwitchGates.R_PROFILE_NONE, SwitchGates.R_PROFILE_DISABLED)
         add(SwitchGates.ID_PROFILE, Level.WARN, SwitchGates.R_PROFILE_UNTESTED)
-        add(SwitchGates.ID_ANDROID, Level.BLOCK, SwitchGates.R_ANDROID_DIFFERS)
+        add(SwitchGates.ID_ANDROID, Level.BLOCK, SwitchGates.R_ANDROID_DIFFERS, SwitchGates.R_ANDROID_OLDER)
+        add(SwitchGates.ID_ANDROID, Level.WARN, SwitchGates.R_ANDROID_DIFFERS)
         add(SwitchGates.ID_FORM, Level.BLOCK, SwitchGates.R_FORM_MISMATCH)
         add(
             SwitchGates.ID_IMAGE, Level.BLOCK,
@@ -39,6 +40,7 @@ class PlainTest {
             ImageIdentifier.R_RAW_WRONG_PHONE, ImageIdentifier.R_RAW_DAMAGED, ImageIdentifier.R_RETIRED,
         )
         add(SwitchGates.ID_INSTALLD, Level.BLOCK, SwitchGates.R_INSTALLD_DIFFERS)
+        add(SwitchGates.ID_INSTALLD, Level.WARN, SwitchGates.R_INSTALLD_DIFFERS)
         add(SwitchGates.ID_OLD_SWITCHER, Level.BLOCK, SwitchGates.R_OLD_SWITCHER_INSTALLED, SwitchGates.R_OLD_SWITCHER_UNKNOWN)
         add(
             SwitchGates.ID_STAGE, Level.BLOCK,

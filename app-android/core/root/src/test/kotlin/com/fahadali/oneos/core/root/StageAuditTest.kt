@@ -1,5 +1,6 @@
 package com.fahadali.oneos.core.root
 
+import com.fahadali.oneos.core.model.AndroidRelease
 import com.fahadali.oneos.core.model.Images
 import com.fahadali.oneos.core.model.InstalldExpected
 import com.fahadali.oneos.core.model.PackageSets
@@ -129,6 +130,7 @@ class StageAuditTest {
         assertEquals(RootScript.SCRIPTS, shVar("SCRIPTS").split(' '))
         assertEquals(SessionEnv.ALLOWED.keys.toList(), shVar("ENV_KEYS").split(' '))
         assertEquals(Images.ALL.map { it.sdk }.distinct().single().toString(), shVar("IMAGE_SDK"))
+        assertEquals(AndroidRelease.MIN_HOST_SDK.toString(), shVar("MIN_HOST_SDK"))
         // Enabled profiles only, each with its ids and form (SM- model numbers, and docomo's SC- ones;
         // 0.4.17: the Z Flip7's flip, which root runs with the phone settings).
         val rows = Regex("""^\s+([a-z0-9-]+)\) echo "(S[MC]-\S+) (\S+) (\S+) (fold|bar|flip)" ;;$""", RegexOption.MULTILINE)

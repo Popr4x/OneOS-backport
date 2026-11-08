@@ -24,7 +24,11 @@
 #   table <bytes>                     stdin: host_installd.table
 #   env <bytes>                       stdin: session.env
 #   finish <profile> <image> <set> <versionCode>
-#   launch <session|dry> <versionCode> <sessionId> <hideGms> <heatCap> <secIms> <edmStub>
+#   launch <session|dry> <versionCode> <sessionId> <hideGms> <heatCap> <secIms> <edmStub> [verboseBoot] [otherHost]
+#                                     otherHost 0|1: the user ticked that this
+#                                     phone runs another Android (MIN_HOST_SDK
+#                                     or newer) or another installd table than
+#                                     the OneOS files carry; 1 accepts both
 #                                     secIms 0|1: this launch's
 #                                     ONEOS_GUEST_SEC_IMS (this phone's
 #                                     Samsung IMS app in the guest)
@@ -115,6 +119,9 @@ APP_PACKAGE=com.fahadali.oneos
 SPLASH_COMPONENT=com.fahadali.oneos/.ui.GapSplashActivity
 OLD_SWITCHER=com.wewaffles.onelineage
 IMAGE_SDK=37
+# The oldest host Android a launch with otherHost=1 accepts (Android 15;
+# AndroidRelease.MIN_HOST_SDK).
+MIN_HOST_SDK=35
 # SHA-256 of the method lines of switcher/patches/host_installd.txt: the
 # installd codes the guard jars carry (InstalldExpected.SHA256).
 INSTALLD_SHA=791e52c441b62944f88244a2610b9433c869c9c3916a49f43d14552de82280f2
@@ -658,9 +665,11 @@ check_env() { # <file> <form> <profile> <image>
 }
 # host_installd.table (InstalldTableFormat 1): this phone's fingerprint, the
 # source jar's SHA-256, a valid trailer, and methods equal to the staged
-# host_installd.txt, whose method lines hash to INSTALLD_SHA.
-check_table() { # <file>
-    f=$1
+# host_installd.txt, whose method lines hash to INSTALLD_SHA. With "loose" the
+# methods may differ (another One UI, OneLineage-style): staging keeps such a
+# table, and only a launch the user ticked (otherHost=1) accepts it.
+check_table() { # <file> [loose]
+    f=$1 loose=${2:-}
     [ -f "$f" ] || refuse "host_installd.table missing"
     ge 65536 "$(stat -c %s "$f")" || refuse "host_installd.table is over 64 kB"
     [ "$(grep -v '^#' "$STAGE/host_installd.txt" 2>/dev/null | sha256sum | cut -d' ' -f1)" = "$INSTALLD_SHA" ] ||
@@ -683,7 +692,8 @@ check_table() { # <file>
     [ "$((lines + 0))" -eq $((n + 5)) ] || refuse "host_installd.table: expected $n methods and a trailer"
     [ "$(sed -n "$((n + 5))p" "$f")" = "sha256 $(sed '$d' "$f" | sha256sum | cut -d' ' -f1)" ] ||
         refuse "host_installd.table: the sha256 trailer does not match"
-    [ "$(sed -n "5,$((n + 4))p" "$f" | sha256sum | cut -d' ' -f1)" = "$INSTALLD_SHA" ] ||
+    [ "$loose" = loose ] ||
+        [ "$(sed -n "5,$((n + 4))p" "$f" | sha256sum | cut -d' ' -f1)" = "$INSTALLD_SHA" ] ||
         refuse "this phone's installd table differs from the one the OneOS jars carry"
 }
 # Every staged file of the profile, root's and matching files.sha256; no file
@@ -925,7 +935,7 @@ do_table() {
     [ $# -eq 1 ] || usage "table <bytes>"
     receive_text host_installd.table "$1" 65536
     [ -n "$(received_sum host_installd.txt)" ] || { rm -f "$part"; refuse "host_installd.txt was not received"; }
-    ( check_table "$part" ) || { rm -f "$part"; exit 2; }
+    ( check_table "$part" loose ) || { rm -f "$part"; exit 2; }
     mv -f "$part" "$STAGE/host_installd.table" || die "could not put host_installd.table in place"
     say "@@OK table"
 }
@@ -955,7 +965,7 @@ do_finish() {
     [ "$(received_sum system.raw)" = "$P_RAW_SHA" ] || refuse "the image was not received or checked"
     check_raw "$P_RAW_BYTES" "$P_RAW_SHA"
     check_env "$STAGE/session.env" "$P_FORM" "$P_PROFILE" "$P_IMAGE"
-    check_table "$STAGE/host_installd.table"
+    check_table "$STAGE/host_installd.table" loose
     printf '%s' "$list" | LC_ALL=C sort -k2 > "$STAGE/files.sha256.tmp" && own "$STAGE/files.sha256.tmp" 0644 &&
         mv -f "$STAGE/files.sha256.tmp" "$STAGE/files.sha256" || die "could not write files.sha256"
     # Every other flat file that is not the sessions' own state goes to the
@@ -997,8 +1007,8 @@ find_tools() {
 }
 
 do_launch() {
-    [ $# -eq 7 ] || [ $# -eq 8 ] || usage "launch <session|dry> <versionCode> <sessionId> <hideGms> <heatCap> <secIms> <edmStub> [verboseBoot]"
-    mode=$1 code=$2 sid=$3 gms=$4 heat=$5 secims=$6 edmstub=$7 verbose=${8:-0}
+    [ $# -ge 7 ] && [ $# -le 9 ] || usage "launch <session|dry> <versionCode> <sessionId> <hideGms> <heatCap> <secIms> <edmStub> [verboseBoot] [otherHost]"
+    mode=$1 code=$2 sid=$3 gms=$4 heat=$5 secims=$6 edmstub=$7 verbose=${8:-0} other=${9:-0}
     case "$mode" in session|dry) ;; *) usage "launch mode $mode" ;; esac
     is_dec "$code" || usage "launch versionCode $code"
     case "$sid" in *[!0-9a-f]*|'') usage "launch session id" ;; esac
@@ -1008,6 +1018,7 @@ do_launch() {
     case "$secims" in 0|1) ;; *) usage "launch secIms $secims" ;; esac
     case "$edmstub" in 0|1) ;; *) usage "launch edmStub $edmstub" ;; esac
     case "$verbose" in 0|1) ;; *) usage "launch verboseBoot $verbose" ;; esac
+    case "$other" in 0|1) ;; *) usage "launch otherHost $other" ;; esac
     [ -n "$T" ] || [ "$(id -u)" = 0 ] || refuse "not root"
     step "checks"
     [ ! -e "$STAGE/.oneos_update" ] || refuse "the installed system update did not finish: retry the update"
@@ -1024,7 +1035,12 @@ do_launch() {
     case "$model" in "$1"*) ;; *) refuse "this phone ($model) is not a $1" ;; esac
     [ "$(getprop ro.product.device)" = "$2" ] || refuse "codename $(getprop ro.product.device), profile $M_PROFILE is $2"
     [ "$(getprop ro.soc.model)" = "$3" ] || refuse "chip $(getprop ro.soc.model), profile $M_PROFILE is $3"
-    [ "$(getprop ro.build.version.sdk)" = "$IMAGE_SDK" ] || refuse "Android SDK $(getprop ro.build.version.sdk), the image is $IMAGE_SDK"
+    hsdk=$(getprop ro.build.version.sdk)
+    if [ "$hsdk" != "$IMAGE_SDK" ]; then
+        [ "$other" = 1 ] || refuse "Android SDK $hsdk, the image is $IMAGE_SDK"
+        is_dec "$hsdk" && [ "$hsdk" -ge "$MIN_HOST_SDK" ] || refuse "Android SDK $hsdk, OneOS needs $MIN_HOST_SDK or newer"
+        say "@@INFO otherHost: Android SDK $hsdk, the image is $IMAGE_SDK (ticked)"
+    fi
     idle_or_refuse
     if [ -f "$STAGE/persist_session.active" ]; then
         refuse "the last session never returned: restore One UI's settings first (Last session)"
@@ -1033,7 +1049,11 @@ do_launch() {
     check_files "$names"
     set -- $(image_raw "$M_IMAGE")
     check_raw "$1" "$2"
-    check_table "$STAGE/host_installd.table"
+    if [ "$other" = 1 ]; then
+        check_table "$STAGE/host_installd.table" loose
+    else
+        check_table "$STAGE/host_installd.table"
+    fi
     check_env "$STAGE/session.env" "$form" "$M_PROFILE" "$M_IMAGE"
     find_tools
     [ -n "$BB" ] || refuse "no busybox at the root manager's paths"

@@ -151,21 +151,41 @@ class GatesTest {
     }
 
     @Test
-    fun installdMustBeByteEqual() {
+    fun installdDifferenceWarnsAndMustBeTicked() {
         val good = input(Bundles.S26U)
         val m = good.installd!!.methods
         val changed = good.copy(installd = good.installd.copy(methods = m.map { if (it.code == 13) it.copy(code = 113) else it }))
-        assertEquals(Level.BLOCK, eval(GatePhase.SWITCH, changed).level(SwitchGates.ID_INSTALLD))
-        assertEquals(Level.BLOCK, eval(GatePhase.PREPARE, changed).level(SwitchGates.ID_INSTALLD))
+        val sw = eval(GatePhase.SWITCH, changed)
+        assertEquals(Level.WARN, sw.level(SwitchGates.ID_INSTALLD))
+        assertEquals(SwitchGates.INSTALLD_DIFFERS_ACK, sw.find(SwitchGates.ID_INSTALLD)!!.ack)
+        assertTrue(SwitchGates.otherHost(sw))
+        assertFalse(sw.allows(sw.toTick.filter { it.id != SwitchGates.ID_INSTALLD }.mapNotNull { it.tickKey }.toSet()))
+        assertEquals(Level.WARN, eval(GatePhase.PREPARE, changed).level(SwitchGates.ID_INSTALLD))
+        assertNull(eval(GatePhase.PREPARE, changed).find(SwitchGates.ID_INSTALLD)!!.ack)
+        assertFalse(SwitchGates.otherHost(eval(GatePhase.SWITCH, good)))
+        // Not derived: nothing to stage, still refused.
         assertEquals(Level.BLOCK, eval(GatePhase.SWITCH, good.copy(installd = null)).level(SwitchGates.ID_INSTALLD))
         assertEquals(Level.BLOCK, eval(GatePhase.SWITCH, good.copy(installd = InstalldDerivation.failed("x"))).level(SwitchGates.ID_INSTALLD))
     }
 
     @Test
     fun androidVersionAndFormBlock() {
-        val sdk36 = input(Bundles.S26U).let { it.copy(facts = it.facts.copy(sdk = 36, androidRelease = "16")) }
-        assertEquals(Level.BLOCK, eval(GatePhase.SWITCH, sdk36).level(SwitchGates.ID_ANDROID))
-        assertEquals(Level.BLOCK, eval(GatePhase.PREPARE, sdk36).level(SwitchGates.ID_ANDROID))
+        // Android 15 and 16 (OneLineage-style): a warning to tick at Switch, none at Prepare.
+        for ((sdk, release) in listOf(35 to "15", 36 to "16")) {
+            val other = input(Bundles.S26U).let { it.copy(facts = it.facts.copy(sdk = sdk, androidRelease = release)) }
+            val sw = eval(GatePhase.SWITCH, other)
+            assertEquals(Level.WARN, sw.level(SwitchGates.ID_ANDROID))
+            val ack = sw.find(SwitchGates.ID_ANDROID)!!.ack!!
+            assertTrue(ack, ack.contains("Android $release"))
+            assertTrue(SwitchGates.otherHost(sw))
+            assertEquals(Level.WARN, eval(GatePhase.PREPARE, other).level(SwitchGates.ID_ANDROID))
+            assertNull(eval(GatePhase.PREPARE, other).find(SwitchGates.ID_ANDROID)!!.ack)
+        }
+        // Older than Android 15: refused.
+        val sdk34 = input(Bundles.S26U).let { it.copy(facts = it.facts.copy(sdk = 34, androidRelease = "14")) }
+        assertEquals(Level.BLOCK, eval(GatePhase.SWITCH, sdk34).level(SwitchGates.ID_ANDROID))
+        assertEquals(Level.BLOCK, eval(GatePhase.PREPARE, sdk34).level(SwitchGates.ID_ANDROID))
+        assertEquals(SwitchGates.R_ANDROID_OLDER, eval(GatePhase.SWITCH, sdk34).find(SwitchGates.ID_ANDROID)!!.finding.reason)
 
         // An S26 Ultra whose hardware looked foldable: the session settings would be wrong.
         val f = Bundles.S26U.facts

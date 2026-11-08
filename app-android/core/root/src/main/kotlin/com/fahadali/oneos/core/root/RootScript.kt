@@ -177,7 +177,7 @@ object RootScript {
                 arg(3, DEC, "a versionCode")
             }
             Verb.LAUNCH -> {
-                if (args.size !in 7..8) need(8)
+                if (args.size !in 7..9) need(9)
                 args.getOrNull(0)?.let { if (it != "session" && it != "dry") p += "launch: mode '$it'" }
                 arg(1, DEC, "a versionCode")
                 arg(2, HEX16, "a session id")
@@ -186,6 +186,7 @@ object RootScript {
                 args.getOrNull(5)?.let { if (it != "0" && it != "1") p += "launch: Samsung IMS '$it' is not 0 or 1" }
                 args.getOrNull(6)?.let { if (it != "0" && it != "1") p += "launch: Knox edm stub '$it' is not 0 or 1" }
                 args.getOrNull(7)?.let { if (it != "0" && it != "1") p += "launch: verbose boot is not 0 or 1" }
+                args.getOrNull(8)?.let { if (it != "0" && it != "1") p += "launch: other host is not 0 or 1" }
             }
             Verb.RECOVER, Verb.OLD_LIST, Verb.REMOVE -> need(0)
             Verb.SELFUPDATE -> {

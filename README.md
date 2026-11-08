@@ -8,7 +8,7 @@
 
 <p align="center">
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-5B3FCB?style=flat-square&labelColor=2B3445">
-  <img alt="Android 17" src="https://img.shields.io/badge/Android-17-1C5FD6?style=flat-square&labelColor=2B3445">
+  <img alt="Android 15–17" src="https://img.shields.io/badge/Android-15–17-1C5FD6?style=flat-square&labelColor=2B3445">
   <img alt="One UI 9" src="https://img.shields.io/badge/One%20UI-9-1C5FD6?style=flat-square&labelColor=2B3445">
   <img alt="Root: KernelSU" src="https://img.shields.io/badge/root-KernelSU-1C5FD6?style=flat-square&labelColor=2B3445">
 </p>
@@ -37,6 +37,16 @@ WeWaffles, and builds its guest images with
 > Google or OPPO.
 
 ## Status
+
+> [!CAUTION]
+> **Android 15 and 16 (One UI 7 and 8.x), from 0.4.66, untested.** Like
+> [OneLineage](https://github.com/WeWaffles/OneLineage), OneOS now lets a phone
+> on Android 15 or newer switch to its Android 17 systems. The app warns and
+> asks you to tick before each new switch: the other system may not start or
+> work fully. If your One UI's installd differs from One UI 9's, you also have
+> to tick that the other system could change or delete One UI's app data,
+> because the OneOS files have One UI 9's installd codes built in. Back up
+> first. Android 14 and older are still refused.
 
 App version 0.4.40. Samsung flagships with Snapdragon, plus the first five
 Exynos phones and (0.4.33) the first MediaTek phone; root is required (tested with KernelSU; Magisk and APatch are

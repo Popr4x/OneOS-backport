@@ -171,8 +171,8 @@ object CompatEvaluator {
             )
         }
 
-        // Android version vs the OneOS images (a guest must match the host SDK).
-        // WARN here; switching refuses a different version (BLOCK at switch time).
+        // Android version vs the OneOS images. WARN here; switching asks for a tick on
+        // Android 15+ (AndroidRelease.MIN_HOST_SDK) and refuses anything older.
         val matching = images.filter { it.sdk == f.sdk }
         if (matching.isEmpty()) {
             val sdks = images.map { it.sdk }.distinct().sorted()
@@ -182,8 +182,12 @@ object CompatEvaluator {
                 "Android version differs from the OneOS images ($releases); switching may not work",
                 "This phone runs Android ${f.androidRelease.ifEmpty { AndroidRelease.name(f.sdk) }} (SDK ${f.sdk}); " +
                     "the OneOS images are Android $releases (SDK ${sdks.joinToString()}). A guest OS shares " +
-                    "One UI's system services, so it must have the same Android version. Switching will " +
-                    "refuse this phone until there is an image for its Android version.",
+                    "One UI's system services, which differ between Android versions. " +
+                    if (f.sdk >= AndroidRelease.MIN_HOST_SDK) {
+                        "Switching asks you to confirm first; it may not start, or parts of it may not work."
+                    } else {
+                        "Switching refuses Android older than ${AndroidRelease.name(AndroidRelease.MIN_HOST_SDK)}."
+                    },
             )
         } else {
             out += Finding(

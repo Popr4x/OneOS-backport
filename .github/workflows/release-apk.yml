@@ -51,7 +51,13 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
+      # The runner image has the Android SDK (ANDROID_HOME) with its licenses accepted;
+      # AGP downloads the platform and build tools it needs. android-actions/setup-android
+      # failed here: it asks sdkmanager for the old "tools" package, which is gone.
+      - name: Check the Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
 
       - uses: gradle/actions/setup-gradle@v4
 
